@@ -1,1 +1,1 @@
-# spatial_confounding_SS
+# Code for paper ``Regularized Principal Spline Functions to Mitigate Spatial Confounding"
