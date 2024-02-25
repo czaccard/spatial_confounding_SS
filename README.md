@@ -1,6 +1,12 @@
 # Code for paper "Regularized Principal Spline Functions to Mitigate Spatial Confounding"
 This repository contains scripts, files, and figures related to the simulation study and the real data application described in the paper "Regularized Principal Spline Functions to Mitigate Spatial Confounding".
 
+## First install all required R packages
+```
+  source("install_packages.r")
+```
+
+
 ## Contents of the repository
 * **simulations.r** is the main script for running all the simulations using the different approaches compared in the paper.
 
@@ -25,5 +31,5 @@ This repository contains scripts, files, and figures related to the simulation s
 
 #### More details on these files can be found the file "code-details.html"
 
-## First install all required R packages
-  source("install_packages.r")
+
+
