@@ -17,7 +17,6 @@ library(mombf)
 library(spBayes)
 
 setting <- readxl::read_excel(paste0(inpath, "setting.xlsx"), sheet = "Foglio2")
-#sourceCpp(paste0(mypath, "functions.cpp"))
 source(paste0(inpath, "data_generate.r"), local = T)
 source(paste0(inpath, "sim_functions.r"), local = T)
 source(paste0(inpath, "misc.r"), local = T)
@@ -302,7 +301,7 @@ iterations = 2000
 burnin = 1000
 thinning = 1
 
-cl = makeCluster(3, outfile = 'log_SRE.txt')
+cl = makeCluster(2, outfile = 'log_SRE.txt')
 registerDoParallel(cl)
 mycomb <- function(x, ...) {
   mapply(rbind,x,...,SIMPLIFY=FALSE)

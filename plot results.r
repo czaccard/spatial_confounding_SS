@@ -70,7 +70,7 @@ fig2 = ggplot(compare_scenarios, aes(x = Model, y = Estimates)) +
   facet_wrap(~Configuration, nrow = 3, scales = 'free_y', labeller = label_parsed) +
   theme(axis.text.x = element_text(face = model_face, angle = 90),
     panel.grid = element_blank())
-ggsave(paste0(plot_path, "boxplot_3configurations.pdf"), fig2, width = 7.5, height = 5.5, device = pdf)
+ggsave(paste0(plot_path, "boxplot_3configurations.pdf"), fig2, width = 7.5, height = 5.5, device = "pdf")
 
 
 
@@ -193,7 +193,7 @@ g5 = ggplot(out_d, aes(n_bases)) +
         panel.grid.major = element_blank())
 g5
 ggsave(paste0(plot_path, "difference part1 minus part2_basis from 1 to k.pdf"),
-       width = 7.5, height = 4, device = pdf)
+       width = 7.5, height = 4, device = "pdf")
 
 
 

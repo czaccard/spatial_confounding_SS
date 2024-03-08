@@ -318,4 +318,4 @@ gg1rd = ggplot(table_x, aes(Model, Estimate)) +
         axis.text.x = element_text(face = model_face, angle=90))
 gg1rd
 ggsave(paste0(plot_path, "application_ozone.pdf"), gg1rd,
-       width = 7.5, height = 4, device = pdf)
+       width = 7.5, height = 4, device = "pdf")

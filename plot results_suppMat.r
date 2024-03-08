@@ -1,18 +1,40 @@
 library(tidyverse)
 library(geoR)
 library(mvtnorm)
-beta.real = c(1,2) %>% as.matrix(ncol=1) # vector giving intercept coefficient and beta_x
-ind = 2 # 2: indicates the exposure coefficient in a design matrix like cbind(1,X)
 
 outpath = "results/"
 inpath = "func/"
 plot_path = "plots/"
 
+setting <- readxl::read_excel(paste0(inpath, "setting.xlsx"), sheet = "Foglio2")
+source(paste0(inpath, "data_generate.r"), local = T)
+source(paste0(inpath, "sim_functions.r"), local = T)
+source(paste0(inpath, "misc.r"), local = T)
 
-type_dgm = "RelBias_deltafixed"
-options_model = 1 # choose 1, 2, or 3
+beta.real = c(1,2) %>% as.matrix(ncol=1) # vector giving intercept coefficient and beta_x
+ind = 2 # 2: indicates the exposure coefficient in a design matrix like cbind(1,X)
+
+M = 2^6 # Length of one side of grid 
+griddf = expand.grid(lngcoords = seq(0, 1, l=M+1)[-(M+1)],
+                     latcoords = seq(0, 1, l=M+1)[-(M+1)])
+
+n0 = 500 # number of sampled locations
+n_new = 50 # to make predictions
+set.seed(231)
+yind <- sample(1:(M^2), size=n0+n_new)
+
+coords = griddf[yind,]
+D = dist(coords, diag = T, upper = T) %>% as.matrix() %>% unname()
+rownames(D) <- NULL
+coords_new = tail(coords, n_new)
 
 n_sim = 100
+mu1 = rep(0, n0+n_new)
+mu2 = rep(0, n0+n_new)
+
+type_dgm = "RelBias_deltafixed"
+options_model = 1
+
 
 configs = c(7, 3, 5)
 out = out_m = data.frame()
@@ -72,7 +94,7 @@ g3
 
 
 ggsave(paste0(plot_path, "differences d and dstar.pdf"), g3,
-       width = 7.5, height = 4, device = pdf)
+       width = 7.5, height = 4, device = "pdf")
 ####
 
 
@@ -133,7 +155,7 @@ g8 = ggplot(out2_all %>% filter(`Correlation with`=="Confounder"),
   theme(panel.grid = element_blank())
 g8
 ggsave(paste0(plot_path, "correlation g with lin comb.pdf"), g8,
-       width = 7.5, height = 4, device = pdf)
+       width = 7.5, height = 4, device = "pdf")
 
 
 
