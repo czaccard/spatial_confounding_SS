@@ -37,6 +37,17 @@ coef(mod_ols)['x']
 iterations = 2000
 burnin = 1000
 thinning = 1
+
+mod0sp = spLM(f0, dat, as.matrix(coords),
+              starting = list(beta=rnorm(7), sigma.sq=.1, tau.sq=.1, phi=1, nu=.5),
+              tuning = list(sigma.sq=.04, tau.sq=.02, phi=.03, nu=0),
+              priors = list(sigma.sq.ig=c(2,1), tau.sq.ig=c(2,1),
+                            beta.norm=list(rep(0, 7), diag(1e6,7)),
+                            phi.unif=c(3/max(dist(coords)), 3/min(dist(coords)))),
+              cov.model = 'exponential', n.samples =iterations)
+mod0sp = spRecover(mod0sp, start = burnin+1)
+plot(mod0sp$p.beta.recover.samples[,'x'])
+
 mod_sre = spLM(f, dat, as.matrix(coords),
                starting = list(beta=rnorm(1), sigma.sq=.1, tau.sq=.1, phi=1, nu=.5),
                tuning = list(sigma.sq=.02, tau.sq=.02, phi=.02, nu=0),
