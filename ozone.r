@@ -295,15 +295,7 @@ model_face[9:11] = 'bold'
 
 #### THIS IS FIGURE 3 ####
 gg1rd = ggplot(table_x, aes(Model, Estimate)) +
-  geom_rect(
-    aes(xmin = - Inf,
-        xmax = Inf,
-        ymin = low0[1],
-        ymax = high0[1]), fill="red", alpha=0.02) +
   geom_point() +
-  # geom_hline(aes(yintercept=ci0x[1]*stdevs['y']/stdevs['x']), col="red", linetype = "dashed") +
-  # geom_hline(aes(yintercept=ci0x[2]*stdevs['y']/stdevs['x']), col="red", linetype = "dashed") +
-  geom_hline(aes(yintercept=coef(mod0)['x']*stdevs['y']/stdevs['x']), col="red") +
   geom_errorbar(aes(ymin=LowCI, ymax=UppCI),
                 position=position_dodge(0.05), width = 0.2, linewidth = .7) +
   geom_hline(aes(yintercept=0), linetype="dotted") +
