@@ -31,5 +31,10 @@ This repository contains scripts, files, and figures related to the simulation s
 
 #### More details on these files can be found the file "code-details.html"
 
+## Notes
+The code has been tested on Windows 11 and Linux (Ubuntu) machines.
+
+The numbers of iterations of the MCMC algorithms are small for the purpose of illustration. Increase their values for morre accurate results.
+
 
 
