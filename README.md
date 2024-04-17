@@ -1,5 +1,5 @@
 # Code for paper "Regularized Principal Spline Functions to Mitigate Spatial Confounding"
-This repository contains scripts, files, and figures related to the simulation study and the real data application described in the paper "Regularized Principal Spline Functions to Mitigate Spatial Confounding" by Carlo Zaccardi, Pasquale Valentini, Luigi Ippoliti and Alexandra M. Schmidt.
+This repository contains scripts, files, and figures related to the simulation study and the real data application described in the paper "Regularized Principal Spline Functions to Mitigate Spatial Confounding" by Carlo Zaccardi, Pasquale Valentini, Luigi Ippoliti and Alexandra M. Schmidt ([arXiv link](https://arxiv.org/abs/2403.05373)).
 
 ## First install all required R packages
 ```
