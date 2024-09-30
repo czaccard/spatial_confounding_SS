@@ -9,6 +9,7 @@ This repository contains scripts, files, and figures related to the simulation s
 
 ## Contents of the repository
 * **simulations.r** is the main script for running all the simulations using the different approaches compared in the paper.
+* **simulations_suppMat.r** runs the simulations in the Supplementary Web Material.
 
 * **folder "func"** contains the main functions for the simulations:
   - **data_generate.r** contains the function to generate the data for the simulations study.
@@ -21,7 +22,7 @@ This repository contains scripts, files, and figures related to the simulation s
 
 * **folder "plots"** contains all the figures in the paper.
 
-* **plot results.r** produces figures related to the simulation study.
+* **plot results.r** produces figures related to the main text.
 
 * **plot results_suppMat.r** produces figures in the Supplementary Web Material. 
 
