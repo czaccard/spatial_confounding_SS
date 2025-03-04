@@ -22,7 +22,7 @@ This repository contains scripts, files, and figures related to the simulation s
 
 * **folder "plots"** contains all the figures in the paper.
 
-* **plot results.r** produces figures related to the main text.
+* **plot results.r** produces figures related to the simulation study.
 
 * **plot results_suppMat.r** produces figures in the Supplementary Web Material. 
 
