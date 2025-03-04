@@ -299,8 +299,8 @@ table_x$low0=ci0x[1]
 table_x$high0=ci0x[2]
 table_x[,-(1:2)] = table_x[,-(1:2)]*stdevs['y']/stdevs['x']
 model_names2 = c("OLS","SRE", "Spatial+_fx", "SpatialTP", "gSEM", "Spatial+", "KS",
-                 "SA", "SS_fv", "SS_nmig", "SS_mom", "SGLASSO")
-model_face = rep('plain', length(model_names2)-1)
+                 "SA", "SS_fv", "SS_nmig", "SS_mom")
+model_face = rep('plain', length(model_names2))
 model_face[9:11] = 'bold'
 
 
@@ -310,8 +310,11 @@ gg1rd = ggplot(table_x, aes(Model, Estimate)) +
   geom_errorbar(aes(ymin=LowCI, ymax=UppCI),
                 position=position_dodge(0.05), width = 0.2, linewidth = .7) +
   geom_hline(aes(yintercept=0), linetype="dotted") +
-  scale_x_discrete(limits=model_names2[-12]) +
+  scale_x_discrete(limits=model_names2[-c(9:10)]) +
   ylab('Estimated Effect (%)') +
+  geom_hline(aes(yintercept=ci0x[1]*stdevs['y']/stdevs['x']), col="red", linetype = "dashed") +
+  geom_hline(aes(yintercept=ci0x[2]*stdevs['y']/stdevs['x']), col="red", linetype = "dashed") +
+  geom_hline(aes(yintercept=coef(mod0)['x']*stdevs['y']/stdevs['x']), col="red") +
   theme_light() +
   theme(strip.text = element_text(size=12, color="black"),
         panel.grid = element_blank(),

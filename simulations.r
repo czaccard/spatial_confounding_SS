@@ -15,11 +15,14 @@ library(akima)
 library(SSconf)
 library(mombf)
 library(spBayes)
+library(mgcv)
+library(metR)
+library(paletteer)
 
-setting <- readxl::read_excel(paste0(inpath, "setting.xlsx"), sheet = "Foglio2")
 source(paste0(inpath, "data_generate.r"), local = T)
 source(paste0(inpath, "sim_functions.r"), local = T)
 source(paste0(inpath, "misc.r"), local = T)
+source(paste0(inpath, "sim_spectralAdj.r"), local = T)
 
 beta.real = c(1,2) %>% as.matrix(ncol=1) # vector giving intercept coefficient and beta_x
 ind = 2 # 2: indicates the exposure coefficient in a design matrix like cbind(1,X)
@@ -50,171 +53,19 @@ type_dgm = "RelBias_deltafixed"
 # 3 options are available => "conditional", "RelBias_deltafixed", "RelBias_sigma2fixed"
 
 
-#### Spatial+ (DWA) ####
-if (!dir.exists(paste0(outpath ,"DWA"))) dir.create(paste0(outpath ,"DWA"))
-
-
-tprsm = kgrid <- c(3:9, seq(10, 50, by=5), seq(60, 90, by=10), seq(100, 250, by=25))
-names_kgrid = paste0("tprs", tprsm)
-model_names<-c("OLS","Spatial_fx","RSR_fx","gSEM_fx","Spatial+_fx","Spatial","RSR","gSEM","Spatial+")
-method<-"GCV.Cp"
-
-
-k_sp<-150
-for (j in init:end) {
-  DG = generate_data(setting, j, type_dgm, coords, D, 0.15)
-  Xsim = DG$X
-  Ysim = DG$Y
-  
-  beta_results<-matrix(0,length(model_names),n_sim)
-  rownames(beta_results)<-model_names
-  fv_MSE_results = coverage_results = s2_results<-beta_results
-  appo = data.frame(matrix(NA, n_new, length(model_names)))
-  colnames(appo) = model_names
-  prediction = vector(l=n_sim) %>% as.list()
-  prediction = lapply(1:n_sim, function(ii) prediction[[ii]] = list(summaries=matrix(NA, length(model_names), 2, dimnames=list(model_names, c('mae', 'mspe'))),
-                                                                    values = appo, se = appo))
-  
-  for(i in 1:n_sim){
-    X <- Xsim[i,1:n0]
-    Y <- Ysim[i,1:n0]
-    x_new = tail(Xsim[i,], n_new)
-    y_new = tail(Ysim[i,], n_new)
-    pred_data = data.frame(coords_new, X=x_new, Y=y_new)
-    
-    XD = cbind(1, X) # design matrix
-    #Fit linear model
-    mod<-lm(Y~X)
-    beta_results[1,i]<-mod$coefficients[ind]
-    fv_MSE_results[1,i]<-mean((mod$fitted.values-Y)^2)
-    s2_results[1,i] = crossprod(mod$residuals)/(n0-ncol(XD))
-    var_est = s2_results[1,i] * solve(crossprod(XD))[ind,ind]
-    ci <- beta_results[1,i] + sqrt(var_est) %o% c(-1, 1) * qnorm(0.975)
-    coverage_results[1,i] = ci[1] < beta.real[ind] & ci[2] > beta.real[ind]
-    pred_mod = predict(mod, pred_data, se = T)
-    y_pred = data.frame(value = pred_mod$fit, se = pred_mod$se.fit)
-    prediction[[i]]$summaries[1,] = c(mae = mean(abs(y_pred$value - pred_data$Y)), mspe = mean((y_pred$value - pred_data$Y)^2))
-    prediction[[i]]$values[,1] = y_pred[,1]
-    prediction[[i]]$se[,1] = y_pred[,2]
-    #Fit models without smoothing of spatial effects
-    fit<-fit_models(X,Y, lngcoords, latcoords, sim_data = coords[1:n0,], k_sp=k_sp,model_fx=TRUE, pred_data = pred_data)
-    beta_results[2:5,i]<-fit$beta_hat
-    fv_MSE_results[2:5,i]<-fit$fv_MSE
-    s2_results[2:5,i] = fit$s2mat
-    coverage_results[2:5,i] = fit$cover
-    prediction[[i]]$summaries[2:5,] = t(sapply(1:4, function(ii) fit$prediction[[ii]]$summaries))
-    prediction[[i]]$values[,2:5] = sapply(1:4, function(ii) fit$prediction[[ii]]$values[,1])
-    prediction[[i]]$se[,2:5] = sapply(1:4, function(ii) fit$prediction[[ii]]$values[,2])
-    #Fit models with smoothing of spatial effects
-    fit<-fit_models(X,Y, lngcoords, latcoords, sim_data = coords[1:n0,], k_sp=k_sp,model_fx=FALSE, pred_data = pred_data)
-    beta_results[6:9,i]<-fit$beta_hat
-    fv_MSE_results[6:9,i]<-fit$fv_MSE
-    s2_results[6:9,i] = fit$s2mat
-    coverage_results[6:9,i] = fit$cover
-    prediction[[i]]$summaries[6:9,] = t(sapply(1:4, function(ii) fit$prediction[[ii]]$summaries))
-    prediction[[i]]$values[,6:9] = sapply(1:4, function(ii) fit$prediction[[ii]]$values[,1])
-    prediction[[i]]$se[,6:9] = sapply(1:4, function(ii) fit$prediction[[ii]]$values[,2])
-    if(i%%10 == 0)cat("i=",i,"\n")
-  }
-  MSE_results = apply(beta_results,1, function(x) mean((x - beta.real[ind])^2))
-  MSE_results = data.frame(mse = MSE_results)
-  
-  DWA_results = list(beta_results=t(beta_results), fv_MSE_results=t(fv_MSE_results), MSE_results=MSE_results, s2_results=t(s2_results),
-                     prediction = prediction, coverage_results=t(coverage_results), beta.real=beta.real, input=data.frame(setting[j,]))
-  saveRDS(DWA_results, file = paste0(outpath, "DWA/sim", j,"_", type_dgm,".RDS"))
-  cat("Spatial+: finished simulations with setting # ", j, "\n")
+process_tprsMM <- function(mm, to_df=TRUE){
+  # Reorder and drop intercept
+  mm <- mm[, c(ncol(mm)-1, ncol(mm), 1:(ncol(mm)-3))]
+  if (to_df) {
+    mm <- as.data.frame(mm)
+  } 
+  colnames(mm) <- paste0("tprs", 1:ncol(mm))
+  mm
 }
-rm(beta_results, fv_MSE_results, MSE_results, s2_results, coverage_results, var_est, ci)
 
-
-
-#### Keller-Szpiro (KS) ####
-if (!dir.exists(paste0(outpath ,"KS"))) dir.create(paste0(outpath ,"KS"))
-
-tprsm <- c(3:9, seq(10, 50, by=5), seq(60, 90, by=10), seq(100, 250, by=25))
-# CREATE TPRS BASIS MATRIX
-tprsSC.grid <- smoothCon(s(lngcoords, latcoords, fx=TRUE, k=n0,
-                      xt=list(max.knots=2e3, seed=1776)), data = coords[1:n0,])
-tprsMM0 <- PredictMat(tprsSC.grid[[1]], data = coords[1:n0,])
-tprsDF <- process_tprsMM(tprsMM0, to_df=F)
-tprsMM0_new = PredictMat(tprsSC.grid[[1]], data = coords_new)
-tprsDF_new <- process_tprsMM(tprsMM0_new, to_df=F)
-# basiTPRS = cbind(1, tprsDF)
-
-for (j in init:end) {
-  DG = generate_data(setting, j, type_dgm, coords, D, 0.15)
-  Xsim = DG$X
-  Ysim = DG$Y
-  
-  estsTPRS <- matrix(0, nrow=length(tprsm), ncol=n_sim)
-  rownames(estsTPRS) <- tprsm
-  varTPRS = bicyzTPRS = aicyzTPRS = s2TPRS = fvMSE_TPRS = estsTPRS
-  appo = list()
-  
-  for(i in 1:n_sim){
-    X <- Xsim[i,1:n0]
-    Y <- Ysim[i,1:n0]
-    x_new = tail(Xsim[i,], n_new)
-    y_new = tail(Ysim[i,], n_new)
-    
-    mae = vector(l=length(tprsm)); names(mae) = tprsm; mspe = mae
-    y_pred = matrix(nrow = n_new, ncol = length(tprsm))
-    colnames(y_pred) = tprsm
-    se_pred = y_pred
-    
-    # TPRS-SemiPar
-    for (k in 1:length(tprsm)){
-      Xtprs_semipar_temp <- data.frame(int=1, X=X, as.matrix(tprsDF[, paste0("tprs", 1:tprsm[k])]))
-      mod = lm(Y~-1 + ., data = Xtprs_semipar_temp)
-      sm = summary(mod)
-      estsTPRS[k, i] <- coef(mod)[ind]
-      varTPRS[k, i] <- sm$coefficients[ind,2]^2
-      s2TPRS[k, i] <- drop(crossprod(mod$residuals)/mod$df.residual)
-      fvMSE_TPRS[k,i] = mean((Y - mod$fitted.values)^2) # MSE of fitted values
-      pred_data = data.frame(1, x_new, tprsDF_new[, paste0("tprs", 1:tprsm[k])])
-      colnames(pred_data) = colnames(Xtprs_semipar_temp)
-      pred_mod = predict(mod, pred_data, se = T)
-      y_pred[,k] = pred_mod$fit
-      se_pred[,k] = pred_mod$se.fit
-      mae[k] = mean(abs(pred_mod$fit - y_new))
-      mspe[k] = mean((pred_mod$fit - y_new)^2)
-    }
-    appo[[i]] = list(summaries = data.frame(mae=mae, mspe=mspe), values = y_pred, se = se_pred)
-    # AIC for outcome model with no exposure
-    for (k in 1:length(tprsm)){
-      Ztprs_semipar_temp <- as.matrix(cbind(1, as.matrix(tprsDF[, paste0("tprs", 1:tprsm[k])])))
-      mod = lm(Y~-1+Ztprs_semipar_temp)
-      aicyzTPRS[k, i] <- AIC(mod)
-      bicyzTPRS[k, i] <- BIC(mod)
-    }
-    if(i%%5 == 0)cat("i=",i,"\n")
-  }
-  ind_ic_min <- apply(aicyzTPRS, 2, which.min)
-  est <- estsTPRS[cbind(ind_ic_min, 1:ncol(estsTPRS))]
-  estVar = varTPRS[cbind(ind_ic_min, 1:ncol(varTPRS))]
-  ci <- est + sqrt(estVar) %o% c(-1, 1) * qnorm(0.975)
-  
-  KS_results = list()
-  KS_results$beta_results <- est
-  KS_results$s2_results <- s2TPRS[cbind(ind_ic_min, 1:ncol(s2TPRS))]
-  KS_results$fv_MSE_results = fvMSE_TPRS[cbind(ind_ic_min, 1:ncol(fvMSE_TPRS))]
-  KS_results$MSE_results <- mean((est - beta.real[ind])^2)
-  KS_results$coverage_results = ci[,1] < beta.real[ind] & ci[,2] > beta.real[ind]
-  KS_results$beta.real=beta.real
-  KS_results$prediction = list(
-    summaries = t(sapply(1:n_sim, function(ii) appo[[ii]]$summaries[ind_ic_min[ii],])),
-    values = sapply(1:n_sim, function(ii) appo[[ii]]$values[,ind_ic_min[ii]]),
-    se = sapply(1:n_sim, function(ii) appo[[ii]]$se[,ind_ic_min[ii]])
-  )
-  KS_results$input=data.frame(setting[j,])
-  KS_results$notes = DG$e
-  saveRDS(KS_results, file = paste0(mypath, "KS/sim", setting$sim[j],"_", type_dgm,".RDS"))
-  cat("KS: finished simulations with setting # ", j, "\n")
-}
-rm(ind_ic_min, est, estVar, ci, appo, y_pred, se_pred, mae, mspe, mod, pred_mod)
-
-#### Spike & Slab ####
 options_model = 1 # null-space type: choose 1, 2, or 3
+
+
 
 priors = list(beta = c(0, 1e6), # N(mean, var)
               sigma2y = c(2, 0.1), # IG(shape, rate)
@@ -226,92 +77,154 @@ SS_priortype = c("george"=1, "nmig"=2, "pMOM"=3)
 prior_choice = SS_priortype["pMOM"] # choose prior structure
 
 switch (names(prior_choice),
-  'george' = {subfolder = paste0("SS", options_model)},
-  'nmig' = {subfolder = paste0("SS_nmig", options_model)},
-  'pMOM' = {
-    subfolder = paste0("SS_mom", options_model)
-    priorCoef=momprior(tau=0.348)
-    priorDelta <- modelbbprior(alpha.p=1,beta.p=1)
-    priorVar <- igprior(alpha = priors$sigma2y[1], lambda = priors$sigma2y[2])
-    varpmom = integrate(function(x) x^2 * dmom(x,tau=priorCoef@priorPars[1]), -Inf, Inf)$value #standardized variance
-    if (priorCoef@priorDistr=='pMOM') method <- 'auto' else method <- 'Laplace'
-  }
+        'george' = {subfolder = paste0("SS", options_model)},
+        'nmig' = {subfolder = paste0("SS_nmig", options_model)},
+        'pMOM' = {
+          subfolder = paste0("SS_mom", options_model)
+          priorCoef=momprior(tau=0.348)
+          priorDelta <- modelbbprior(alpha.p=1,beta.p=1)
+          priorVar <- igprior(alpha = priors$sigma2y[1], lambda = priors$sigma2y[2])
+          varpmom = integrate(function(x) x^2 * dmom(x,tau=priorCoef@priorPars[1]), -Inf, Inf)$value #standardized variance
+          if (priorCoef@priorDistr=='pMOM') method <- 'auto' else method <- 'Laplace'
+        }
 )
-if (!dir.exists(paste0(outpath , subfolder))) dir.create(paste0(outpath , subfolder))
 
-iterations = 2000
-burnin = 1000
-thinning = 1
+setting2 = expand.grid(range1 = seq(0.05, 0.5, length.out=10),
+                       range2 = seq(0.05, 0.5, length.out=10),
+                       delta = 0.5, sigma_1 = 1, sigma_2 = 1, tau = 0.25)
+setting2 = data.frame(sim=1:nrow(setting2), cov_func='exp',
+                      smooth_param=NA, setting2)
 
-for (j in init:init) {
-  DG = generate_data(setting, j, type_dgm, coords, D, 0.15)
-  Xsim = DG$X
-  Ysim = DG$Y
-  
-  SS_results = runParallel_sim(prior_choice, Xsim, Ysim, options_model, iterations, burnin, thinning, priors, T,
-                       10, beta.real, T, ncores = 2)
-  SS_results$input = data.frame(setting[j,])
-  SS_results$MSE_results = mean((SS_results$pmeanbeta[,ind] - beta.real[ind])^2)
-  SS_results$notes = DG$e
-  savename = paste0(outpath, subfolder, "/sim", j,"_", type_dgm,".RDS")
-  saveRDS(SS_results, file = savename)
-  cat(subfolder, ": finished simulations with setting #", j, "\n")
+
+find.param2 = function(object, names, thin){
+  nchains = length(object)
+  out = lapply(1:nchains, function(i) mcmc(object[[i]][,names]))
+  return(as.mcmc.list(out, thin=thin))
 }
 
-
-
-
-
-#### Spectral Adjustment model ####
-source(paste0(inpath, "sim_spectralAdj.r"), local = T)
-subfolder = 'SpectralAdj'
-iterations = 100
-burnin = 50
-thinning = 2
-
-for (j in init:init) {
-  DG = generate_data(setting, j, type_dgm, coords, D, 0.15)
-  Xsim = DG$X
-  Ysim = DG$Y
-  
-  SA_results = runsim_spectral(Xsim, Ysim, iterations, burnin, thinning,
-                               beta.real, ncores = 2, log_file = 'log_SA.txt')
-  SA_results$input = data.frame(setting[j,])
-  SA_results$MSE_results = mean((SA_results$pmeanbeta[,ind] - beta.real[ind])^2)
-  SA_results$notes = DG$e
-  savename = paste0(outpath, subfolder, "/sim", j,"_", type_dgm,".RDS")
-  saveRDS(SA_results, file = savename)
-  cat(subfolder, ": finished simulations with setting #", j, "\n")
-}
-
-
-
-
-
-#### Spatial Random Effect ####
-if (!dir.exists(paste0(outpath ,"SRE"))) dir.create(paste0(outpath ,"SRE"))
-
-priors = list(beta = c(0, 1e6), # N(mean, var)
-              sigma2y = c(2, 0.1), # IG(shape, rate)
-              spikeslab = c(1e-4, 1), #(s_0, s_1)
-              w = c(1, 1), #Beta(a_w, b_w)
-              psi = c(2, 1) #IG(a_p, b_p)
-)
-iterations = 2000
-burnin = 1000
-thinning = 1
-
-cl = makeCluster(2, outfile = 'log_SRE.txt')
+cl <- makeCluster(2, outfile = "foo.txt")
 registerDoParallel(cl)
 mycomb <- function(x, ...) {
   mapply(rbind,x,...,SIMPLIFY=FALSE)
 }
 
-for (j in init:end) {
-  capture.output(cat(j, "------"), file="log_SRE2.txt", append=T)
-  DG = generate_data(setting, j, type_dgm, coords, D, 0.15)
+# iterations and burnin are small numbers for the purpose of illustration only
+# results in the paper are based on much larger values
+iterations = 100
+burnin = 100
+thinning = 1
+priorCoef=momprior(tau=0.348)
+priorDelta <- modelbbprior(alpha.p=1,beta.p=1)
+priorVar <- igprior(alpha = priors$sigma2y[1], lambda = priors$sigma2y[2])
+
+
+psplines = principal.spline.2D(coords/max(coords), 1:n0, ~lngcoords+latcoords)
+B = as.data.frame(psplines$F_n[,-1])
+tprsm <- c(3:9, seq(10, 50, by=5), seq(60, 90, by=10), seq(100, 250, by=25))
+# CREATE TPRS BASIS MATRIX
+tprsSC.grid <- smoothCon(s(lngcoords, latcoords, fx=TRUE, k=n0,
+                           xt=list(max.knots=2e3, seed=1776)), data = coords[1:n0,])
+tprsMM0 <- PredictMat(tprsSC.grid[[1]], data = coords[1:n0,])
+tprsDF <- process_tprsMM(tprsMM0, to_df=F)
+
+betaPMOM = betaOLS = betaKS = matrix(NA, nrow(setting2), n_sim)
+betaSPPLUS_fx = betaSPPLUS = betaSPATIALTP = betaSRE = betaGSEM = betaSA = betaKS
+
+for (j in setting2$sim) {
+  print(j)
+  
+  DG = generate_data(setting2, j, type_dgm, coords, D, 0.15)
   Xsim = DG$X
   Ysim = DG$Y
+  
+  estsTPRS <- matrix(0, nrow=length(tprsm), ncol=n_sim)
+  rownames(estsTPRS) <- tprsm
+  varTPRS = bicyzTPRS = aicyzTPRS = s2TPRS = fvMSE_TPRS = estsTPRS
+
+  for(i in 1:n_sim){
+    X <- Xsim[i,1:n0]
+    Y <- Ysim[i,1:n0]
+    x_new = tail(Xsim[i,], n_new)
+    y_new = tail(Ysim[i,], n_new)
+    
+    mod = lm(Y~X)
+    betaOLS[j,i] = mod$coefficients[2]
+    
+    mae = vector(l=length(tprsm)); names(mae) = tprsm; mspe = mae
+    y_pred = matrix(nrow = n_new, ncol = length(tprsm))
+    colnames(y_pred) = tprsm
+    se_pred = y_pred
+    
+    # KELLER-SZPIRO
+    for (k in 1:length(tprsm)){
+      Xtprs_semipar_temp <- data.frame(int=1, X=X, as.matrix(tprsDF[, paste0("tprs", 1:tprsm[k])])) # prima c'era tprsDF[yind,...] mentre ora ho messo i valori campionati
+      mod = lm(Y~-1 + ., data = Xtprs_semipar_temp)
+      assign(paste('modKS',i,k, sep='_'), mod)
+      sm = summary(mod)
+      estsTPRS[k, i] <- coef(mod)[ind]
+    }
+    # AIC for outcome model with no exposure
+    for (k in 1:length(tprsm)){
+      Ztprs_semipar_temp <- as.matrix(cbind(1, as.matrix(tprsDF[, paste0("tprs", 1:tprsm[k])]))) # prima c'era tprsDF[yind,...] mentre ora ho messo i valori campionati
+      mod = lm(Y~-1+Ztprs_semipar_temp)
+      aicyzTPRS[k, i] <- AIC(mod)
+      bicyzTPRS[k, i] <- BIC(mod)
+    }
+    if(i%%5 == 0) cat("i=",i,"\n")
+    
+    # SS_MOM
+    xa = model.matrix(~., cbind(X, B))[,-1]
+    includevars <- rep(FALSE, ncol(xa))
+    includevars[2:ncol(model.matrix(~., data.frame(X=X)))-1] = T
+    mod_SS_pMOM = histmat_pMOM= vector("list", 1)
+    nchains=1
+    for (chain in 1:nchains) {
+      tic()
+      set.seed(NULL)
+      mod_SS_pMOM[[chain]] = modelSelection(
+        y=Y, x=xa, center=T, scale=T,
+        includevars = includevars, niter=iterations+burnin,
+        burnin = burnin, priorCoef=priorCoef,
+        thinning = thinning, priorDelta=priorDelta, priorVar=priorVar, 
+        method=method, initSearch='greedy', verbose=T)
+      histmat_pMOM[[chain]] <- rnlp(
+        msfit=mod_SS_pMOM[[chain]], priorCoef=priorCoef, priorVar=priorVar,
+        niter = iterations/thinning, burnin = burnin, thinning = thinning)
+      toc()
+    }
+    beta_mcmc = find.param2(histmat_pMOM, 2, thinning)
+    s = summary(beta_mcmc)
+    betaPMOM[j,i] = unname(s$statistics['Mean'])
+    
+    # SPATIALTP, SPATIAL+, GSEM
+    mod<-gam(Y~X+s(lngcoords,latcoords,k=150,fx=F),data=coords[1:n0,],method='GCV.Cp')
+    betaSPATIALTP[j,i] = mod$coefficients[2]
+    
+    model_fx = T
+    mod_X <- gam(X~s(lngcoords,latcoords,k=150,fx=model_fx),data=coords[1:n0,],method='GCV.Cp')
+    f_X_hat = mod_X$fitted.values
+    r_X<-X-f_X_hat
+    mod<-gam(Y~r_X+s(lngcoords,latcoords,k=150, fx=model_fx),data=coords[1:n0,],method='GCV.Cp')
+    betaSPPLUS_fx[j,i] = mod$coefficients[2]
+    
+    model_fx = F
+    mod_X <- gam(X~s(lngcoords,latcoords,k=150,fx=model_fx),data=coords[1:n0,],method='GCV.Cp')
+    f_X_hat = mod_X$fitted.values
+    r_X<-X-f_X_hat
+    mod<-gam(Y~r_X+s(lngcoords,latcoords,k=150, fx=model_fx),data=coords[1:n0,],method='GCV.Cp')
+    betaSPPLUS[j,i] = mod$coefficients[2]
+    
+    mod_Y <- gam(Y~s(lngcoords,latcoords,k=150,fx=model_fx),data=coords[1:n0,],method='GCV.Cp')
+    f_Y_hat = mod_Y$fitted.values
+    r_Y<-Y-f_Y_hat
+    mod = lm(r_Y~r_X-1)
+    betaGSEM[j,i] = mod$coefficients[1]
+  }
+  ind_ic_min <- apply(aicyzTPRS, 2, which.min)
+  est <- estsTPRS[cbind(ind_ic_min, 1:ncol(estsTPRS))]
+  betaKS[j,] = unname(est[1:n_sim])
+  
+  # SRE
   fe = foreach(i=1:n_sim,.combine = 'mycomb', .packages = c('spBayes')) %dopar% {
     X<-Xsim[i,1:n0]
     Y<- Ysim[i,1:n0]
@@ -326,28 +239,34 @@ for (j in init:end) {
                              phi.unif=c(1/.5,1/.05)), verbose = F, n.report = 10,
                cov.model = 'exponential', n.samples = iterations+burnin)
     m <- spRecover(mod, start = burnin, thin = thinning, verbose = F)
-    m.p = spPredict(mod, start = burnin, thin = thinning, verbose = F,
-                    pred.covars = cbind(1,x_new), pred.coords = as.matrix(coords_new))
     
     beta_results = colMeans(m$p.beta.recover.samples)[ind]
-    thetas = cbind(m$p.theta.recover.samples, range=1/m$p.theta.recover.samples[,3]) # tau.sq=variance of nugget, sigma.sq=partial sill
-    s2_results = colMeans(thetas[,-3])
-    ci = apply(m$p.beta.recover.samples, 2, quantile, probs=c(2.5,97.5)/100)[,ind]
-    coverage_results = ci[1] < beta.real[ind] & ci[2] > beta.real[ind]
-    y_pred <- apply(m.p$p.y.predictive.samples, 1, mean)
-    mae = mean(abs(y_pred - y_new))
-    mspe = mean((y_pred - y_new)^2)
     if(i%%1 == 0) capture.output(cat("isim=",i,"\n"), file="foo.txt", append=T)
-    list(beta_results=beta_results, coverage_results=coverage_results, s2_results= s2_results, mae=mae, mspe=mspe, y_pred=y_pred)
+    list(beta_results=beta_results)
   }
-  fe$MSE_results = mean((fe$beta_results - beta.real[ind])^2)
-  fe$notes = DG$e
+  betaSRE[j,] = fe$beta_results
   
-  savename = paste0(outpath, subfolder, "/sim", j,"_", type_dgm,".RDS")
-  saveRDS(fe, file = savename)
-  cat(subfolder, ": finished simulations with setting #", j, "\n")
+  # SA
+  SA_results = runsim_spectral(Xsim, Ysim, iterations, burnin, thinning, beta.real, 
+                               predict_ = F, ncores = 2, log_file = 'log_SAmodel.txt')
+  betaSA[j,] = SA_results$pmeanbeta[,2]
+  
+  
 }
+
+
 stopCluster(cl)
+closeAllConnections()
+
+all.res = list(setting2=setting2, betaPMOM = betaPMOM, betaKS=betaKS,
+               betaSPPLUS_fx = betaSPPLUS_fx, betaOLS = betaOLS,
+               betaSPPLUS = betaSPPLUS, betaSPATIALTP = betaSPATIALTP,
+               betaSRE = betaSRE, betaGSEM = betaGSEM, betaSA = betaSA)
+saveRDS(all.res, paste0(outpath, '/ratio.models.OLS.RDS'))
+
+
+
+
 
 
 

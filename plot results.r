@@ -1,6 +1,8 @@
 library(tidyverse)
 library(geoR)
 library(mvtnorm)
+library(metR)
+library(paletteer)
 beta.real = c(1,2) %>% as.matrix(ncol=1) # vector giving intercept coefficient and beta_x
 ind = 2 # 2: indicates the exposure coefficient in a design matrix like cbind(1,X)
 
@@ -15,69 +17,7 @@ options_model = 1 # choose 1, 2, or 3
 n_sim = 100
 
 
-# Figures in the paper #####
-configs = c(7, 3, 5)
-compare_scenarios = tibble()
-for (settingplot in configs) {
-  DWA_ = readRDS(paste0(outpath, "DWA/sim", settingplot,"_", type_dgm,".RDS"))
-  KS_ = readRDS(paste0(outpath, "KS/sim", settingplot,"_", type_dgm,".RDS"))
-  subfolder = 'SS_fv'
-  SS_ = readRDS(paste0(outpath, subfolder, options_model, "/sim", settingplot,"_", type_dgm,".RDS"))
-  subfolder = 'SS_nmig'
-  SS_nmig = readRDS(paste0(outpath, subfolder, options_model, "/sim", settingplot,"_", type_dgm,".RDS"))
-  subfolder = 'SS_mom'
-  SS_mom = readRDS(paste0(outpath, subfolder, options_model, "/sim", settingplot,"_", type_dgm,".RDS"))
-  SA_ = readRDS(paste0(outpath, "SpectralAdj/sim", settingplot,"_", type_dgm,".RDS"))
-  subfolder = 'SRE'
-  SRE_ = readRDS(paste0(outpath, subfolder, "/sim", settingplot,"_", type_dgm,".RDS"))
-
-  DWA_$input
-  compare_names<-c("OLS","SpatialTP_fx","RSR_fx","gSEM_fx","Spatial+_fx","SpatialTP",
-                   "RSR","gSEM","Spatial+", "KS", "SS_fv", "SS_nmig", "SS_mom", "SA",
-                   "SRE")
-  compare_beta = data.frame(DWA_$beta_results, KS_$beta_results, SS_$pmeanbeta[,ind],
-                            SS_nmig$pmeanbeta[,ind], SS_mom$pmeanbeta[,ind],
-                            SA_$pmeanbeta[,ind], SRE_$beta_results)
-  colnames(compare_beta) = compare_names
-  compare_beta = compare_beta %>% as_tibble() %>%
-    relocate(SRE, .after = OLS)
-  compare_names = colnames(compare_beta)
-  compare_beta = compare_beta %>% select(!c(SpatialTP_fx, gSEM_fx, RSR_fx, RSR))
-  # knitr::kable(t(colMeans(compare_beta)), 'latex', digits = 2)
-  compare_scenarios = bind_rows(compare_scenarios, compare_beta)
-}
-
-compare_scenarios = bind_cols(compare_scenarios, Configuration = c(rep('I',n_sim), rep('II',n_sim), rep('III',n_sim))) %>%
-  pivot_longer(cols = -Configuration, names_to = "Model", values_to = "Estimates") %>%
-  mutate(Configuration = factor(Configuration, levels = c('I', 'II', 'III'),
-                                labels = c(expression('Configuration I ('*phi[x]* '= 0.05, '*phi[w]*'= 0.5)'), 
-                                           expression('Configuration II ('*phi[x]* '= 0.5, '*phi[w]*'= 0.05)'),
-                                           expression('Configuration III ('*phi[x]* '= 0.2, '*phi[w]*'= 0.2)'))),
-         Model = factor(Model, levels = unique(Model)))
-model_names2 = c("OLS","SRE", "Spatial+_fx", "SpatialTP", "gSEM", "Spatial+", "KS",
-                 "SA", "SS_fv", "SS_nmig", "SS_mom")
-model_face = rep('plain', length(model_names2))
-model_face[9:11] = 'bold'
-
-#### THIS IS FIGURE 2 ####
-fig2 = ggplot(compare_scenarios, aes(x = Model, y = Estimates)) +
-  geom_boxplot(fill = "#D0DDD7") +
-  geom_hline(yintercept=beta.real[ind], linetype="dashed",
-             linewidth = 1.1, color = "red") +
-  xlab("Models") + ylab("Estimates") +
-  scale_x_discrete(limits=model_names2) +
-  theme_bw() +
-  facet_wrap(~Configuration, nrow = 3, scales = 'free_y', labeller = label_parsed) +
-  theme(axis.text.x = element_text(face = model_face, angle = 90),
-    panel.grid = element_blank())
-ggsave(paste0(plot_path, "boxplot_3configurations.pdf"), fig2, width = 7.5, height = 5.5, device = "pdf")
-
-
-
-
-
-
-
+# FIGURE 1 #####
 source(paste0(inpath, "data_generate.r"), local = T)
 source(paste0(inpath, "misc.r"), local = T)
 setting <- readxl::read_excel(paste0(inpath, "setting.xlsx"), sheet = "Foglio2")
@@ -176,7 +116,7 @@ for (rz in c(0.5, 0.2, 0.05)) {
 
 out_d = out %>% dplyr::select(n_bases, difference, diff_gls, rz, rg, options_model)
 
-#### THIS IS FIGURE 1 ####
+#### Plot FIGURE 1 ####
 g5 = ggplot(out_d, aes(n_bases)) + 
   geom_line(aes(y=difference, linetype=options_model), linewidth=.6) +
   # geom_line(aes(y=diff_gls), color='darkgray', linetype='dotted') +
@@ -192,8 +132,113 @@ g5 = ggplot(out_d, aes(n_bases)) +
   theme(panel.grid.minor = element_blank(),
         panel.grid.major = element_blank())
 g5
-ggsave(paste0(plot_path, "difference part1 minus part2_basis from 1 to k.pdf"),
+ggsave(paste0(plot_path, "difference_part1_minus_part2_basis_from_1_to_k.pdf"),
        width = 7.5, height = 4, device = "pdf")
 
 
+# FIGURE 2 ######
+all.res = readRDS(paste0(outpath, '/ratio.models.OLS.RDS'))
+model_names = c('SRE', 'Spatial+_fx', 'SpatialTP', 'gSEM', 
+                'Spatial+', 'KS', 'SA', 'SS_mom')
 
+type_plot = 'RMSE' # 'RMSE' or 'MAE' or 'Estimate'
+
+ggdf2 = with(all.res, {
+  a = select(setting2, range1, range2) %>% 
+    rename(range_x = range1, range_w = range2)
+  ggdf = as_tibble(lapply(all.res[-1], function(x) {
+    if (type_plot=='RMSE') sqrt(rowMeans((x-2)^2))/sqrt(rowMeans((betaOLS-2)^2))
+    else if (type_plot=='Estimate') rowMeans(x)/rowMeans(betaOLS)
+    else if (type_plot=='MAE') rowMeans(abs(x-2))/rowMeans(abs(betaOLS-2))
+  }))
+  
+  ggdf = a %>% bind_cols(ggdf) %>% select(-betaOLS)
+  ggdf
+})
+
+
+
+ggdf3 = ggdf2 %>%
+  pivot_longer(-c(range_x, range_w), names_to = 'Model', values_to = 'Model.over.OLS') %>%
+  mutate(smaller1=factor(Model.over.OLS<1, levels = c('FALSE', 'TRUE')),
+         Model=factor(Model, 
+                      levels = c('betaSRE', 'betaSPPLUS_fx','betaSPATIALTP',
+                                 'betaGSEM','betaSPPLUS','betaKS', 'betaSA',
+                                 'betaPMOM'),
+                      labels = model_names))
+
+
+if (type_plot=='Estimate') {breaks = seq(0.94, 1.28, by=0.02); ttl = '(a)'}
+if (type_plot=='RMSE') {breaks = seq(0.6, 3, by=0.2); ttl = '(b)'}
+if (type_plot=='MAE') {breaks = seq(0.6, 3.2, by=0.2); ttl = '(a)'}
+gg2 = ggplot(ggdf3, 
+             aes(range_x, range_w, z = Model.over.OLS)) +
+  geom_contour_filled(breaks = breaks) +
+  geom_contour(breaks = breaks, color='black') +
+  geom_contour(breaks = 1, color='black', linewidth=1) +
+  geom_line(aes(range_x, range_w), filter(ggdf3, range_x==range_w),
+            color='grey50', linewidth=1, linetype = 'dotted') +
+  geom_text_contour(breaks = breaks, stroke = 0.15, skip = 0, size = 2.8,
+                    label.placer = label_placer_fraction(), check_overlap = T) +
+  facet_wrap(~Model, nrow = 2) +
+  scale_fill_manual(
+    values = c(
+      paletteer_c("ggthemes::Blue", sum(breaks<1), dir=-1),
+      paletteer_c("ggthemes::Red", sum(breaks>=1)))) +
+  theme_bw() +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  xlab(expression(paste('Range Exposure (',phi[x], ')'))) +
+  ylab(expression(paste('Range Confounder (',phi[w], ')'))) +
+  ggtitle(ttl) +
+  theme(legend.position = 'none', panel.grid = element_blank(),
+        title = element_text(size = 8),
+        axis.title = element_text(size = 9),
+        axis.text = element_text(size = 7),
+        strip.text = element_text(size = 7),
+        plot.margin=unit(c(0,0.4,0,0), "lines"),
+        panel.spacing = unit(0.1,'lines'))
+
+if (type_plot=='RMSE') {ggr = gg2; ggname = "ratios_RMSE.pdf"}
+if (type_plot=='Estimate') {gge = gg2; ggname = "ratios_Estimate.pdf"}
+if (type_plot=='MAE') {ggb = gg2; ggname = "ratios_MAE.pdf"}
+
+
+library(gridExtra)
+gg1 = arrangeGrob(ggb, ggr, nrow=2, ncol=1)
+plot(gg1)
+
+
+ggsave(paste0(plot_path, "ratios_maps.pdf"), gg1, 
+       width = 6, height = 8, device = pdf)
+
+
+ggdf3 %>% group_by(Model) %>% 
+  summarise(m = mean(as.logical(smaller1)))
+
+val1 = 0.98*(type_plot=='Estimate') + 0.8*(type_plot=='RMSE') + 0.8*(type_plot=='MAE')
+val2 = 1.1*(type_plot=='Estimate') + 1.8*(type_plot=='RMSE') + 1.8*(type_plot=='MAE')
+ggdf3 %>% group_by(Model) %>% filter(range_x<range_w) %>% 
+  summarise(m = mean(Model.over.OLS<val1))
+
+ggdf3 %>% group_by(Model) %>% filter(range_x<range_w & 0.2<range_x) %>% 
+  summarise(m = mean(Model.over.OLS<val1))
+
+ggdf3 %>% group_by(Model) %>%
+  summarise(m = mean(Model.over.OLS>val2))
+
+
+
+ggdf4 = with(all.res, {
+  a = select(setting2, range1, range2) %>% 
+    rename(range_x = range1, range_w = range2)
+  ggdf = as_tibble(lapply(all.res[-1], function(x) {
+    rowMeans(abs(x) < abs(betaOLS))
+  }))
+  
+  ggdf = a %>% bind_cols(ggdf) %>% select(-betaOLS)
+  ggdf
+})
+colMeans(ggdf4)
+colMeans(ggdf4 %>% filter(range_x<range_w))
+colMeans(ggdf4 %>% filter(range_x<range_w & 0.2<range_x))
